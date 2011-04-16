@@ -9,38 +9,25 @@
   // Initial Setup
   // -------------
 
-  // Save a reference to the global object.
-  var root = this;
-  
-  // Save the previous value of the `Backbone` variable.
-  var previousBackbone = root.Backbone;
-  
   // The top-level namespace. All public Backbone classes and modules will
   // be attached to this. Exported for both CommonJS and the browser.
   var Backbone;
   if (typeof exports !== 'undefined') {
     Backbone = exports;
   } else {
-    Backbone = root.Backbone = {};
+    Backbone = this.Backbone = {};
   }
 
   // Current version of the library. Keep in sync with `package.json`.
   Backbone.VERSION = '0.3.3';
 
   // Require Underscore, if we're on the server, and it's not already present.
-  var _ = root._;
+  var _ = this._;
   if (!_ && (typeof require !== 'undefined')) _ = require('underscore')._;
 
   // For Backbone's purposes, either jQuery or Zepto owns the `$` variable.
-  var $ = root.jQuery || root.Zepto;
+  var $ = this.jQuery || this.Zepto;
 
-  // Runs Backbone.js in *noConflict* mode, returning the `Backbone` variable
-  // to its previous owner. Returns a reference to this Backbone object.
-  Backbone.noConflict = function() {
-    root.Backbone = previousBackbone;
-    return this;
-  };
-  
   // Turn on `emulateHTTP` to use support legacy HTTP servers. Setting this option will
   // fake `"PUT"` and `"DELETE"` requests via the `_method` parameter and set a
   // `X-Http-Method-Override` header.
@@ -727,7 +714,7 @@
   Backbone.History = function() {
     this.handlers = [];
     this.fragment = this.getFragment();
-    _.bindAll(this, 'checkUrl');
+    _.bindAll(this, 'checkUrl', 'beforeFilter', 'afterFilter');
   };
 
   // Cached regex for cleaning hashes.
@@ -738,6 +725,13 @@
 
   // Set up all inheritable **Backbone.History** properties and methods.
   _.extend(Backbone.History.prototype, {
+    // Before and after filters that are ran whenever a new URL is loaded via loadUrl
+    beforeFilter: function(callback) {
+      return callback();
+    },
+    afterFilter: function(callbackReturn) {
+      return callbackReturn;
+    },
 
     // The default interval to poll for hash changes, if necessary, is
     // twenty times a second.
@@ -750,7 +744,9 @@
 
     // Start the hash change handling, returning `true` if the current URL matches
     // an existing route, and `false` otherwise.
-    start : function() {
+    start : function(filters) {
+      filters = filters || {};
+
       if (historyStarted) throw new Error("Backbone.history has already been started");
       var docMode = document.documentMode;
       var oldIE = ($.browser.msie && (!docMode || docMode <= 7));
@@ -763,7 +759,19 @@
         setInterval(this.checkUrl, this.interval);
       }
       historyStarted = true;
-      return this.loadUrl();
+
+      if (typeof filters['before'] == 'function') {
+        this.beforeFilter = filters.before;
+      };
+
+      if (typeof filters['after'] == 'function') {
+        this.afterFilter = filters.after;
+      };
+
+      var fragment = this.fragment = this.getFragment();
+      var retVal = this.afterFilter(this.beforeFilter(this.loadUrl.bind(this)));
+
+      return retVal;
     },
 
     // Add a route to be tested when the hash changes. Routes added later may
@@ -784,13 +792,16 @@
       if (this.iframe) {
         window.location.hash = this.iframe.location.hash = current;
       }
-      this.loadUrl();
+
+      // this.loadUrl();
+      var fragment = this.fragment = this.getFragment();
+      this.afterFilter(this.beforeFilter(this.loadUrl.bind(this)));
     },
 
     // Attempt to load the current URL fragment. If a route succeeds with a
     // match, returns `true`. If no defined routes matches the fragment,
     // returns `false`.
-    loadUrl : function() {
+    loadUrl : function(beforeFilter, afterFilter) {
       var fragment = this.fragment = this.getFragment();
       var matched = _.any(this.handlers, function(handler) {
         if (handler.route.test(fragment)) {
@@ -798,6 +809,7 @@
           return true;
         }
       });
+
       return matched;
     },
 
@@ -872,7 +884,7 @@
     // For small amounts of DOM Elements, where a full-blown template isn't
     // needed, use **make** to manufacture elements, one at a time.
     //
-    //     var el = this.make('li', {'class': 'row'}, this.model.escape('title'));
+    //     var el = this.make('li', {'class': 'row'}, this.model.get('title'));
     //
     make : function(tagName, attributes, content) {
       var el = document.createElement(tagName);
@@ -944,7 +956,7 @@
   // The self-propagating extend function that Backbone classes use.
   var extend = function (protoProps, classProps) {
     var child = inherits(this, protoProps, classProps);
-    child.extend = this.extend;
+    child.extend = extend;
     return child;
   };
 
@@ -1058,7 +1070,7 @@
     // Add static properties to the constructor function, if supplied.
     if (staticProps) _.extend(child, staticProps);
 
-    // Correctly set child's `prototype.constructor`.
+    // Correctly set child's `prototype.constructor`, for `instanceof`.
     child.prototype.constructor = child;
 
     // Set a convenience property in case the parent's prototype is needed later.
@@ -1092,7 +1104,7 @@
 
   // Helper function to escape a string for HTML rendering.
   var escapeHTML = function(string) {
-    return string.replace(/&(?!\w+;|#\d+;|#x[\da-f]+;)/gi, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return string.replace(/&(?!\w+;)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   };
 
 }).call(this);
